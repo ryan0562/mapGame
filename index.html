@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Simple GeoJSON Map</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- Leaflet.js -->
+  <link rel="stylesheet" href="./leaflet.css" />
+  <script src="./leaflet.js"></script>
+  <style>
+    .custom-tooltip {
+      background: transparent;
+      border: none;
+      color: black;
+      font-weight: bold;
+      box-shadow: none;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="map" style="width: 100vw; height: 100vh;"></div>
+
+  <script>
+    async function drawInit() {
+      // 初始化地图，并禁用滚轮缩放功能
+      var map = L.map('map', {
+        dragging: false
+      }).setView([34, 105], 3.5);
+
+      map.on('click', function (e) {
+        var latlng = e.latlng;
+        console.log("您点击的位置的坐标是: " + latlng.lat + ", " + latlng.lng);
+      });
+
+      const response = await fetch('./china.json');
+      if (!response.ok) {
+        throw new Error('Network response was not ok');
+      }
+      const geojsonData = await response.json();
+
+      var markers = [];
+
+      // Create a custom icon
+      var customIcon = L.divIcon({
+        className: 'custom-marker', // Class name for styling
+      });
+
+      geojsonData.features.forEach(function (feature) {
+        var geoLayer = L.geoJSON(feature, {
+          style: {
+            color: 'red',
+            weight: 2
+          }
+        }).addTo(map);
+
+        var center = { lng: feature.properties.cp[0], lat: feature.properties.cp[1] };
+        var marker = L.marker(center, { icon: customIcon }).addTo(map)
+          .bindTooltip(feature.properties.name, {
+            permanent: true,
+            direction: 'center',
+            className: 'custom-tooltip'
+          })
+          .openTooltip();
+
+        markers.push(marker);
+        makeLayerDraggable(geoLayer, feature, marker);
+      });
+
+      function makeLayerDraggable(layer, featureData, marker) {
+        var dragStartLatLng;
+        var originalCoordinates;
+
+        layer.on('mousedown', function (e) {
+          dragStartLatLng = e.latlng;
+          originalCoordinates = JSON.parse(JSON.stringify(featureData.geometry.coordinates));
+
+          map.on('mousemove', onDrag);
+          map.on('mouseup', stopDrag);
+        });
+
+        function onDrag(e) {
+          var deltaLat = e.latlng.lat - dragStartLatLng.lat;
+          var deltaLng = e.latlng.lng - dragStartLatLng.lng;
+
+          // 更新坐标
+          var newCoordinates = originalCoordinates[0].map(function (coord) {
+            return [coord[0] + deltaLng, coord[1] + deltaLat];
+          });
+
+          // 更新图层的几何体
+          featureData.geometry.coordinates[0] = newCoordinates;
+
+          // 更新图层并重新添加到地图上
+          map.removeLayer(layer);
+          layer = L.geoJSON(featureData, {
+            style: {
+              color: 'blue',
+              weight: 2
+            }
+          }).addTo(map);
+
+          // 更新标记的位置
+          var updatedCenter = getPolygonCenter(newCoordinates);
+          marker.setLatLng(updatedCenter); // 直接更新标记的位置而不是创建新标记
+
+          // 重新绑定拖动事件
+          makeLayerDraggable(layer, featureData, marker);
+        }
+
+        function stopDrag() {
+          map.off('mousemove', onDrag);
+          map.off('mouseup', stopDrag);
+        }
+      }
+
+      function getPolygonCenter(coords) {
+        var latSum = 0;
+        var lngSum = 0;
+        var numPoints = coords.length;
+
+        coords.forEach(function (coord) {
+          latSum += coord[1];
+          lngSum += coord[0];
+        });
+
+        return L.latLng(latSum / numPoints, lngSum / numPoints);
+      }
+    }
+
+    drawInit();
+  </script>
+
+</body>
+
+</html>
